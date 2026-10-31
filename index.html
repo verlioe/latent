@@ -1804,8 +1804,8 @@ function updateWeapons(dt) {
 
 function updateCamera(dt) {
   const p = G.player;
-  const tx = clamp(p.x - VW / 2, 0, Math.max(0, G.world.w - VW));
-  const ty = clamp(p.y - VH / 2, 0, Math.max(0, G.world.h - VH));
+  const tx = p.x - VW / 2;
+  const ty = p.y - VH / 2;
   if (!G.camInit) { G.cam.x = tx; G.cam.y = ty; G.camInit = true; }
   const k = Math.min(1, dt * 11);
   G.cam.x += (tx - G.cam.x) * k;
@@ -1841,8 +1841,8 @@ function spawnPoint() {
   const a = Math.random() * TAU;
   const dist = rnd(0.34, 0.46) * Math.max(VW, VH);
   return {
-    x: clamp(G.player.x + Math.cos(a) * dist, 40, G.world.w - 40),
-    y: clamp(G.player.y + Math.sin(a) * dist, 40, G.world.h - 40),
+    x: G.player.x + Math.cos(a) * dist,
+    y: G.player.y + Math.sin(a) * dist,
   };
 }
 
@@ -1870,8 +1870,8 @@ function spawnFinalBoss() {
   const a = Math.random() * TAU;
   const dist = Math.max(VW, VH) * 0.42;
   const e = spawnEnemy('boss',
-    clamp(G.player.x + Math.cos(a) * dist, 80, G.world.w - 80),
-    clamp(G.player.y + Math.sin(a) * dist, 80, G.world.h - 80));
+    G.player.x + Math.cos(a) * dist,
+    G.player.y + Math.sin(a) * dist);
   e.maxHp = 5200 + G.t * 16;
   e.hp = e.maxHp;
   e.boss = true;
@@ -1894,8 +1894,8 @@ function spawnElite() {
   const a = Math.random() * TAU;
   const dist = Math.max(VW, VH) * 0.45;
   const e = spawnEnemy(type,
-    clamp(G.player.x + Math.cos(a) * dist, 60, G.world.w - 60),
-    clamp(G.player.y + Math.sin(a) * dist, 60, G.world.h - 60));
+    G.player.x + Math.cos(a) * dist,
+    G.player.y + Math.sin(a) * dist);
   e.elite = true;
   e.r *= 1.35;
   e.hp *= 3.2;
@@ -2148,8 +2148,8 @@ function spawnBoss() {
   const a = Math.random() * TAU;
   const dist = Math.max(VW, VH) * 0.45;
   const e = spawnEnemy('boss',
-    clamp(G.player.x + Math.cos(a) * dist, 60, G.world.w - 60),
-    clamp(G.player.y + Math.sin(a) * dist, 60, G.world.h - 60));
+    G.player.x + Math.cos(a) * dist,
+    G.player.y + Math.sin(a) * dist);
   e.maxHp = 800 + G.t * 14;
   e.hp = e.maxHp;
   e.boss = true;
@@ -2330,8 +2330,8 @@ function update(dt) {
     vy = m.y * speed;
   }
 
-  p.x = clamp(p.x + vx * dt, p.r, G.world.w - p.r);
-  p.y = clamp(p.y + vy * dt, p.r, G.world.h - p.r);
+  p.x = p.x + vx * dt;
+  p.y = p.y + vy * dt;
 
   if (p.dashCd > 0) p.dashCd -= dt;
   if (p.invuln > 0) p.invuln -= dt;
@@ -2638,7 +2638,7 @@ function update(dt) {
       }
     }
 
-    if (b.x < -200 || b.x > G.world.w + 200 || b.y < -200 || b.y > G.world.h + 200) gone = true;
+    if (Math.hypot(b.x - p.x, b.y - p.y) > 1700) gone = true;
     if (gone) { G.bullets[i] = G.bullets[G.bullets.length - 1]; G.bullets.pop(); }
   }
 
@@ -2759,6 +2759,11 @@ function update(dt) {
     if (it.life <= 0) G.items.splice(i, 1);
   }
 
+  // 無限世界：走遠就把障礙與陷阱重生到附近
+  if (!G.scatterOrigin || Math.hypot(p.x - G.scatterOrigin.x, p.y - G.scatterOrigin.y) > 2400) {
+    regenScatter(p.x, p.y);
+  }
+
   /* --- 陷阱 --- */
   for (const tr of G.traps) {
     if (tr.cd > 0) tr.cd -= dt;
@@ -2822,6 +2827,27 @@ function inView(x, y, pad) {
   return x > c.x - pad && x < c.x + VW + pad && y > c.y - pad && y < c.y + VH + pad;
 }
 
+function regenScatter(cx, cy) {
+  const st = stageDef();
+  G.props = [];
+  for (let i = 0; i < st.props; i++) {
+    const a = rnd(0, TAU), d = rnd(360, 2000);
+    G.props.push({
+      x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, r: rnd(16, 26),
+      hp: 45, maxHp: 45, kind: Math.random() < 0.5 ? 'pillar' : 'crystal',
+      hit: 0, dead: false, seed: rnd(0, TAU),
+    });
+  }
+  G.traps = [];
+  for (let i = 0; i < st.traps; i++) {
+    const a = rnd(0, TAU), d = rnd(360, 1900);
+    G.traps.push({
+      x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d,
+      r: 26, cd: 0, kind: Math.random() < 0.55 ? 'bomb' : 'spawn',
+    });
+  }
+  G.scatterOrigin = { x: cx, y: cy };
+}
 function drawWorld() {
   const cam = G.cam;
   const x0 = Math.floor(cam.x / 64) * 64, y0 = Math.floor(cam.y / 64) * 64;
@@ -2834,47 +2860,26 @@ function drawWorld() {
   for (let y = y0; y <= y1; y += 64) { ctx.moveTo(cam.x - 64, y + 0.5); ctx.lineTo(x1, y + 0.5); }
   ctx.stroke();
 
+  // 無限星點：以 160px 網格雜湊，不需要世界座標陣列
   ctx.fillStyle = '#a9d4ff';
-  for (const s of G.stars) {
-    if (s.x < cam.x - 12 || s.x > cam.x + VW + 12 || s.y < cam.y - 12 || s.y > cam.y + VH + 12) continue;
-    ctx.globalAlpha = s.a;
-    ctx.fillRect(s.x, s.y, s.r, s.r);
+  const cxs = Math.floor(cam.x / 160), cys = Math.floor(cam.y / 160);
+  for (let gx = cxs - 1; gx <= cxs + Math.ceil(VW / 160); gx++) {
+    for (let gy = cys - 1; gy <= cys + Math.ceil(VH / 160); gy++) {
+      let s = ((gx * 73856093) ^ (gy * 19349663)) >>> 0;
+      for (let i = 0; i < 3; i++) {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        const sx = gx * 160 + (s % 160);
+        s = (s * 1664525 + 1013904223) >>> 0;
+        const sy = gy * 160 + (s % 160);
+        s = (s * 1664525 + 1013904223) >>> 0;
+        ctx.globalAlpha = 0.12 + (s % 40) / 100;
+        ctx.fillRect(sx, sy, 1.6, 1.6);
+      }
+    }
   }
   ctx.globalAlpha = 1;
 
-  // 世界邊界：用霧化收邊，不畫死框
-  const fw = G.world.w, fh = G.world.h, band = 260;
-  const bx0 = Math.max(0, cam.x), bx1 = Math.min(fw, cam.x + VW);
-  const by0 = Math.max(0, cam.y), by1 = Math.min(fh, cam.y + VH);
-  let g2;
-  if (bx0 < band) {
-    g2 = ctx.createLinearGradient(0, 0, band, 0);
-    g2.addColorStop(0, 'rgba(2,4,10,0.95)');
-    g2.addColorStop(1, 'rgba(2,4,10,0)');
-    ctx.fillStyle = g2;
-    ctx.fillRect(0, by0 - 100, band, (by1 - by0) + 200);
-  }
-  if (bx1 > fw - band) {
-    g2 = ctx.createLinearGradient(fw - band, 0, fw, 0);
-    g2.addColorStop(0, 'rgba(2,4,10,0)');
-    g2.addColorStop(1, 'rgba(2,4,10,0.95)');
-    ctx.fillStyle = g2;
-    ctx.fillRect(fw - band, by0 - 100, band, (by1 - by0) + 200);
-  }
-  if (by0 < band) {
-    g2 = ctx.createLinearGradient(0, 0, 0, band);
-    g2.addColorStop(0, 'rgba(2,4,10,0.95)');
-    g2.addColorStop(1, 'rgba(2,4,10,0)');
-    ctx.fillStyle = g2;
-    ctx.fillRect(bx0 - 100, 0, (bx1 - bx0) + 200, band);
-  }
-  if (by1 > fh - band) {
-    g2 = ctx.createLinearGradient(0, fh - band, 0, fh);
-    g2.addColorStop(0, 'rgba(2,4,10,0)');
-    g2.addColorStop(1, 'rgba(2,4,10,0.95)');
-    ctx.fillStyle = g2;
-    ctx.fillRect(bx0 - 100, fh - band, (bx1 - bx0) + 200, band);
-  }
+
 }
 
 function drawMinimap() {
@@ -3327,7 +3332,7 @@ function draw() {
   ctx.restore();
 
   ctx.drawImage(bg, 0, 0, VW, VH);
-  drawMinimap();
+  // drawMinimap();   // 無限世界沒有固定地圖
 
   // 受傷 / 低血量 紅暈
   const hpRatio = p.hp / p.maxHp;
