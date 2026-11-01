@@ -1137,7 +1137,7 @@ function reset() {
   G.enemies.length = 0; G.bullets.length = 0; G.shards.length = 0;
   G.parts.length = 0; G.nums.length = 0; G.rings.length = 0; G.bolts.length = 0;
   G.crates.length = 0; G.items.length = 0; G.spikes = []; G.slashes = []; G.ebullets = [];
-  G.bossTimer = 70; G.bossAlive = false; G.eliteTimer = 24; G.surroundTimer = 20;
+  G.bossTimer = 100; G.bossAlive = false; G.eliteTimer = 24; G.surroundTimer = 20;
   G.finalSpawned = false; G.finalDead = false;
   G.stacks = {};
   G.player = makePlayer();
@@ -1501,6 +1501,7 @@ function openLevelUp(kind) {
   }
 
   const choices = pickWeighted(pool, 3);
+  choices.push({ id: '__skip', name: '跳過', icon: '→', desc: '保留這次升級，回復 6% 生命', skip: true });
 
   ui.levelLead.textContent = G.levelKind === 'start'
     ? `開局自選　選一項帶著走　（${slotText()}）`
@@ -1529,6 +1530,15 @@ function chooseCard(i) {
   const choices = cardRow.__choices;
   if (!choices || !choices[i]) return;
   const u = choices[i];
+  if (u.skip) {
+    const p = G.player;
+    p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.06);
+    if (G.levelKind === 'start') { G.levelKind = 'level'; showScreen(null); G.mode = 'play'; return; }
+    G.pendingLevels = Math.max(0, G.pendingLevels - 1);
+    showScreen(null); G.mode = 'play';
+    if (G.pendingLevels > 0) setTimeout(() => { if (G.mode === 'play') checkLevelUp(); }, 90);
+    return;
+  }
   if (G.levelKind === 'arcana') {
     u.apply(G.player);
     G.arcana = u.id;
@@ -2056,7 +2066,7 @@ function killEnemy(e) {
 /* ============================================================
    9.5 寶箱 / 道具 / 首領
    ============================================================ */
-const BOSS_INTERVAL = 80;
+const BOSS_INTERVAL = 120;
 const BOSS_NAME = '雜訊聚合體';
 
 function spawnCrate(x, y) {
@@ -2794,7 +2804,9 @@ function update(dt) {
   G.eventTimer -= dt;
   if (G.eventTimer <= 0) {
     G.eventTimer = 180;
-    const ev = pick(['rain', 'elite', 'swarm']);
+    const sched = ['rain', 'elite', 'swarm', 'elite'];
+    const ev = sched[(G.eventIndex || 0) % sched.length];
+    G.eventIndex = ((G.eventIndex || 0) + 1) % sched.length;
     if (ev === 'rain') {
       for (let i = 0; i < 5; i++) spawnCrate(p.x + rnd(-300, 300), p.y + rnd(-300, 300));
       G.nums.push({ x: p.x, y: p.y - 96, vx: 0, vy: -10, life: 2.8, text: '寶箱雨！', color: '#ffd36e', size: 20 });
@@ -3544,7 +3556,14 @@ function endGame(won) {
   const di = deathInfo;
   if (di) {
     const need = Math.max(0, Math.ceil(G.player.xpNext - G.player.xp));
-    di.textContent = '等級 ' + G.player.level + '　·　距離下一級還差 ' + need + ' 經驗　·　詛咒加成 +' + Math.round((G.curseBonus || 0) * 100) + '%　·　存活 ' + Math.floor(G.t / 60) + ' 分 ' + Math.floor(G.t % 60) + ' 秒';
+    const miss = [];
+    const sc = slotCounts();
+    if (sc.w < WEAPON_SLOTS) miss.push('武器欄位 ' + sc.w + '/' + WEAPON_SLOTS);
+    if (sc.pa < PASSIVE_SLOTS) miss.push('被動 ' + sc.pa + '/' + PASSIVE_SLOTS);
+    if (Object.keys(G.player.evolved).filter(k => G.player.evolved[k]).length === 0) miss.push('沒做出進化');
+    if (!G.curseBonus) miss.push('沒踩祭壇');
+    if (!G.arcana2) miss.push('沒拿到第二張 Arcana');
+    di.textContent = '等級 ' + G.player.level + '　·　還差 ' + need + ' 經驗升級　·　存活 ' + Math.floor(G.t / 60) + ' 分 ' + Math.floor(G.t % 60) + ' 秒　·　本局缺：' + (miss.length ? miss.join('、') : '沒有，幾乎全滿');
   }
   if (ui.achvLine) {
     ui.achvLine.textContent = unlocked.length
