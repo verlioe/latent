@@ -332,6 +332,7 @@
         </div>
         <div class="best">最佳分數 <b id="bestScore2">0</b>　·　核心 <b id="shardCount2">0</b></div>
         <div class="buildList" id="buildList"></div>
+        <div class="buildList" id="deathInfo"></div>
         <div class="board" id="boardList"></div>
       </div>
     </section>
@@ -1156,6 +1157,8 @@ function reset() {
   G.reviveUsed = false;
   G.combo = 0; G.comboTimer = 0; G.comboBest = 0; G.slow = 0;
   G.bossKills = 0;
+  G.curseBonus = 0;
+  G.eventTimer = 180;
   G.ally = { x: G.player.x + 40, y: G.player.y, cd: 1 };
 
   // 世界內容
@@ -2773,6 +2776,38 @@ function update(dt) {
     regenScatter(p.x, p.y);
   }
 
+  // 詛咒祭壇：踩了敵人更強、核心更多
+  if (G.altars) for (const al of G.altars) {
+    if (al.used) continue;
+    const adx = p.x - al.x, ady = p.y - al.y;
+    if (adx * adx + ady * ady < (p.r + al.r) ** 2) {
+      al.used = true;
+      G.curseBonus += 0.5;
+      p.enemyHp *= 1.25;
+      G.nums.push({ x: p.x, y: p.y - 70, vx: 0, vy: -12, life: 2.6, text: '詛咒祭壇：敵血 +25%｜核心 +50%', color: '#b06bff', size: 15 });
+      G.shake = Math.max(G.shake, 10);
+      SFX.bigKill();
+    }
+  }
+
+  // 每 3 分鐘一個事件
+  G.eventTimer -= dt;
+  if (G.eventTimer <= 0) {
+    G.eventTimer = 180;
+    const ev = pick(['rain', 'elite', 'swarm']);
+    if (ev === 'rain') {
+      for (let i = 0; i < 5; i++) spawnCrate(p.x + rnd(-300, 300), p.y + rnd(-300, 300));
+      G.nums.push({ x: p.x, y: p.y - 96, vx: 0, vy: -10, life: 2.8, text: '寶箱雨！', color: '#ffd36e', size: 20 });
+    } else if (ev === 'elite') {
+      spawnElite(); spawnElite();
+      G.nums.push({ x: p.x, y: p.y - 96, vx: 0, vy: -10, life: 2.8, text: '精英潮！', color: '#ffd36e', size: 20 });
+    } else {
+      surroundWave(); surroundWave();
+      G.nums.push({ x: p.x, y: p.y - 96, vx: 0, vy: -10, life: 2.8, text: '包圍潮！', color: '#ff8a9d', size: 20 });
+    }
+    SFX.levelup();
+  }
+
   /* --- 陷阱 --- */
   for (const tr of G.traps) {
     if (tr.cd > 0) tr.cd -= dt;
@@ -2854,6 +2889,11 @@ function regenScatter(cx, cy) {
       x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d,
       r: 26, cd: 0, kind: Math.random() < 0.55 ? 'bomb' : 'spawn',
     });
+  }
+  G.altars = [];
+  for (let i = 0; i < 3; i++) {
+    const a = rnd(0, TAU), d = rnd(520, 1700);
+    G.altars.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, r: 30, used: false });
   }
   G.scatterOrigin = { x: cx, y: cy };
 }
@@ -2971,6 +3011,20 @@ function draw() {
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, TAU); ctx.stroke();
     drawGlow(p.x, p.y, R + 10, '#b06bff', 0.05 + pulse * 0.04);
+  }
+
+  // 詛咒祭壇
+  if (G.altars) for (const al of G.altars) {
+    if (al.used || !inView(al.x, al.y, 80)) continue;
+    const pu = 0.5 + Math.sin(G.t * 4 + al.x) * 0.5;
+    drawGlow(al.x, al.y, 54, '#b06bff', 0.25 + pu * 0.25);
+    ctx.strokeStyle = 'rgba(176,107,255,' + (0.45 + pu * 0.35).toFixed(2) + ')';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(al.x, al.y, al.r + pu * 4, 0, TAU); ctx.stroke();
+    ctx.fillStyle = 'rgba(176,107,255,0.18)';
+    ctx.beginPath(); ctx.arc(al.x, al.y, al.r, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#d9b8ff';
+    polyPath(al.x, al.y, 9, 3, G.t * 1.5); ctx.fill();
   }
 
   // 陷阱
@@ -3445,7 +3499,7 @@ function endGame(won) {
   // 結算核心：用擊殺 / 存活 / 等級計價（分數會被 combo 倍率放大，不適合當貨幣）
   const base = Math.min(400, Math.max(1,
     Math.floor(G.kills * 0.3 + G.t * 0.3 + G.player.level * 2)));
-  const earned = (won ? Math.round(base * 1.5) : base) * (G.coreMult || 1) * (G.stageCore || 1);
+  const earned = Math.round((won ? base * 1.5 : base) * (G.coreMult || 1) * (G.stageCore || 1) * (1 + (G.curseBonus || 0)));
   G.meta.shards += earned;
   G.lastEarned = earned;
 
@@ -3486,6 +3540,11 @@ function endGame(won) {
       parts.push((u ? u.name : id) + '×' + G.stacks[id]);
     }
     ui.buildList.textContent = parts.length ? '本場配置：' + parts.join('、') : '';
+  }
+  const di = deathInfo;
+  if (di) {
+    const need = Math.max(0, Math.ceil(G.player.xpNext - G.player.xp));
+    di.textContent = '等級 ' + G.player.level + '　·　距離下一級還差 ' + need + ' 經驗　·　詛咒加成 +' + Math.round((G.curseBonus || 0) * 100) + '%　·　存活 ' + Math.floor(G.t / 60) + ' 分 ' + Math.floor(G.t % 60) + ' 秒';
   }
   if (ui.achvLine) {
     ui.achvLine.textContent = unlocked.length
