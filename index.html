@@ -1158,6 +1158,8 @@ function reset() {
   G.combo = 0; G.comboTimer = 0; G.comboBest = 0; G.slow = 0;
   G.bossKills = 0;
   G.curseBonus = 0;
+  G.altarTimer = 240;
+  G.altars = [];
   G.eventTimer = 180;
   G.ally = { x: G.player.x + 40, y: G.player.y, cd: 1 };
 
@@ -2786,6 +2788,16 @@ function update(dt) {
     regenScatter(p.x, p.y);
   }
 
+  // 里程碑祭壇：每 4 分鐘在附近生成一座，讓玩家決定要不要繞路
+  G.altarTimer = (G.altarTimer === undefined ? 240 : G.altarTimer) - dt;
+  if (G.altarTimer <= 0) {
+    G.altarTimer = 240;
+    const aa = rnd(0, TAU);
+    if (!G.altars) G.altars = [];
+    G.altars.push({ x: p.x + Math.cos(aa) * 520, y: p.y + Math.sin(aa) * 520, r: 30, used: false });
+    G.nums.push({ x: p.x, y: p.y - 92, vx: 0, vy: -10, life: 2.6, text: '祭壇出現在附近（核心 +50%）', color: '#b06bff', size: 16 });
+  }
+
   // 詛咒祭壇：踩了敵人更強、核心更多
   if (G.altars) for (const al of G.altars) {
     if (al.used) continue;
@@ -2902,11 +2914,7 @@ function regenScatter(cx, cy) {
       r: 26, cd: 0, kind: Math.random() < 0.55 ? 'bomb' : 'spawn',
     });
   }
-  G.altars = [];
-  for (let i = 0; i < 3; i++) {
-    const a = rnd(0, TAU), d = rnd(520, 1700);
-    G.altars.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, r: 30, used: false });
-  }
+  G.altars = G.altars || [];
   G.scatterOrigin = { x: cx, y: cy };
 }
 function drawWorld() {
